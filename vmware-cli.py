@@ -230,9 +230,9 @@ def resetAllVms(vms):
     for vm in vms:
         resetVm(vm)
 
-def getScsiSpec(scsiKey,busNumber):
+def createScsiSpec(scsiKey,busNumber):
     """
-    Return a virtual scsi ctrl spec
+    Define a virtual scsi ctrl spec
     """
     scsiSpec = VirtualDeviceConfigSpec()
     scsiSpec.setOperation(VirtualDeviceConfigSpecOperation.add)
@@ -244,9 +244,9 @@ def getScsiSpec(scsiKey,busNumber):
 
     return scsiSpec
 
-def getDiskSpec(scsiKey,diskKey,unitNumber,diskSize,diskMode,datastore):
+def createDiskSpec(scsiKey,diskKey,unitNumber,diskSize,diskMode,datastore):
     """
-    Return a virtual disk spec
+    Define a virtual disk spec
     """
     diskSpec = VirtualDeviceConfigSpec()
     diskSpec.setOperation(VirtualDeviceConfigSpecOperation.add)
@@ -266,18 +266,18 @@ def getDiskSpec(scsiKey,diskKey,unitNumber,diskSize,diskMode,datastore):
 
     return diskSpec
 
-def getNicSpec(nicKey,netName,nicName):
+def createNicSpec(nicKey,netName,nicName):
     """
-    Return a virtual nic spec
+    Define a virtual nic spec
     """
     nicSpec = VirtualDeviceConfigSpec()
     nicSpec.setOperation(VirtualDeviceConfigSpecOperation.add)
     nic = VirtualE1000()
     nicBacking = VirtualEthernetCardNetworkBackingInfo()
-    nicBacking.setDeviceName(netname)
+    nicBacking.setDeviceName(netName)
     info = Description()
-    info.setLabel(nicname)
-    info.setSummary(netname)
+    info.setLabel(nicName)
+    info.setSummary(netName)
     nic.setDeviceInfo(info)
     # type: "generated", "manual", assigned" by VC
     nic.setAddressType("generated")
@@ -287,29 +287,9 @@ def getNicSpec(nicKey,netName,nicName):
 
     return nicSpec
 
-def getConfigSpecs(datastore,scsibuskey,scsibusnumber,disksize,diskmode,netname,nicname):
+def createVmSpec(name,cpucount,memorysize,guestos,annotation,datastore,configSpecs):
     """
-    Return a list of all virtual disks and nics
-    """
-    configSpecs = []
-
-    # Create Virtual Disks
-    for disk in numDisks:
-        scsiSpec = getScsiSpec(scsibuskey,scsibusnumber)
-        configSpecs.append(scsiSpec)
-        diskSpec = getDiskSpec(datastore,scsibuskey,disksize,diskmode)
-        configSpecs.append(diskSpec)
-
-    # Create Virtual Nics
-    for nic in numNics:
-        nicSpec = createNicSpec(netname,nicname)
-        configSpecs.append(nicSpec)
-
-    return configSpecs
-
-def getVmSpec(name,cpucount,memorysize,guestos,annotation,datastore,configSpecs):
-    """
-    Return a virtual machine specs given vm properties
+    Create virtual machine from specs
     """
     # Create vm spec
     vmSpec = VirtualMachineConfigSpec()
@@ -330,18 +310,6 @@ def getVmSpec(name,cpucount,memorysize,guestos,annotation,datastore,configSpecs)
     vmSpec.setFiles(vmfi)
 
     return vmSpec
-
-def createVms(name,cpucount,memorysize,guestos,annotation,datastore,scsibuskey,scsibusnumber,datastore,disksize,diskmode,netname,nicname):
-    """
-    """
-    configSpecs = getConfigSpecs(scsibuskey,scsibusnumber,datastore,disksize,diskmode,netname,nicname)
-    vmSpec = createVmSpec(name,cpucount,memorysize,guestos,annotation,datastore,configSpecs)
-
-    task = vmFolder.createVM_Task(vmSpec, resourcePool, None)
-    if task.waitForMe() == "success":
-        print "%s is being created" % options.name
-    else:
-        print "%s was not created" % options.name
 
 def getCommandLineOpts():
     """
@@ -405,8 +373,12 @@ def getCommandLineOpts():
     parser.set_defaults(guestos='rhel5_64Guest')
     parser.set_defaults(annotation='')
     parser.set_defaults(scsibuskey=0)
+    parser.set_defaults(scsibusnum=0)
+    parser.set_defaults(diskkey=0)
+    parser.set_defaults(diskunitnum=0)
     parser.set_defaults(disksize=31457280)
     parser.set_defaults(diskmode='persistent')
+    parser.set_defaults(nickey=0)
     parser.set_defaults(netname='MGMT')
     parser.set_defaults(nicname='Network adapter 1')
     parser.set_defaults(datastore='Storage1')
@@ -523,18 +495,30 @@ def main():
 
     # Create VMs
     if options.create and options.vm:
-        createVirtualDisks()
-        createVirtualNics()
- 
-        vmSpec = createVmSpec(options.name,options.cpucount,options.memorysize,options.guestos,options.annotation,
-                              options.datastore,configSpecs)
-
-        # Call the createVM_Task method on the vm folder
         resourcePool = getResourcePools(si)[0]
         datacenter = getDatacenters(si)[0]
         vmFolder = datacenter.getVmFolder()
 
-        createVMs()
+        # Create virtual devices
+        configSpecs = []
+
+        scsiSpec = createScsiSpec(options.scsibuskey,options.scsibusnum)
+        configSpecs.append(scsiSpec)
+
+        diskSpec = createDiskSpec(options.scsibuskey,options.diskkey,options.diskunitnum,options.disksize,options.diskmode,options.datastore)
+        configSpecs.append(diskSpec)
+
+        nicSpec = createNicSpec(options.nickey,options.netname,options.nicname)
+        configSpecs.append(nicSpec)
+
+        vmSpec = createVmSpec(options.name,options.cpucount,options.memorysize,options.guestos,options.annotation,options.datastore,configSpecs)
+
+        # Call the createVM_Task method on the vm folder
+        task = vmFolder.createVM_Task(vmSpec, resourcePool, None)
+        if task.waitForMe() == "success":
+            print "%s is being created" % options.name
+        else:
+            print "%s was not created" % options.name
 
     si.getServerConnection().logout()
 
