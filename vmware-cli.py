@@ -92,9 +92,9 @@ def listVirtualMachines(vms):
     """
     Print each virtual machine's configuration
     """
-    FORMAT = '%-22s %-36s %-36s %-3s %-10s %-20s %-4s'
+    FORMAT = '%-22s %-36s %-38s %-3s %-10s %-20s %-4s'
     print FORMAT % ('VM Name', 'UUID', 'OS Full Name', 'CPU', 'MEM', 'Annotation', 'Power')
-    print FORMAT % ('=' * 22, '=' * 36, '=' * 36, '=' * 3, '=' * 10, '=' * 20, '=' * 4) 
+    print FORMAT % ('=' * 22, '=' * 36, '=' * 38, '=' * 3, '=' * 10, '=' * 20, '=' * 4) 
 
     if isinstance(vms, VirtualMachine):
         if "PowerOnVM_Task" in vms.getDisabledMethod():
