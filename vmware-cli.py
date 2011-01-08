@@ -253,7 +253,6 @@ def createDiskSpec(scsiKey,diskKey,unitNumber,diskSize,diskMode,datastore):
     diskSpec.setFileOperation(VirtualDeviceConfigSpecFileOperation.create)
     vd = VirtualDisk()
     vd.setCapacityInKB(diskSize)
-    diskSpec.setDevice(vd)
     vd.setKey(diskKey)
     vd.setUnitNumber(unitNumber)
     vd.setControllerKey(scsiKey)
@@ -263,6 +262,7 @@ def createDiskSpec(scsiKey,diskKey,unitNumber,diskSize,diskMode,datastore):
     diskfileBacking.setDiskMode(diskMode)
     diskfileBacking.setThinProvisioned(True)
     vd.setBacking(diskfileBacking)
+    diskSpec.setDevice(vd)
 
     return diskSpec
 
@@ -358,10 +358,12 @@ def getCommandLineOpts():
     parser.add_option('--notes',          dest='annotation',    action='store',      help='Virtual Machine annotations (default: blank)')
     parser.add_option('--scsi-key',       dest='scsikey',       action='store',      help='',                                               type="int")
     parser.add_option('--scsi-busnum',    dest='scsibusnum',    action='store',      help='',                                               type="int")
-    parser.add_option('--disk-key',       dest='diskkey',       action='store',      help='',                                               type="int")
-    parser.add_option('--disk-size',      dest='disksize',      action='store',      help='Amount of disk space in KB (default: 31457280)', type="int")
-    parser.add_option('--disk-mode',      dest='diskmode',      action='store',      help='Disk mode (default: persistent)')
-    parser.add_option('--disk-unitnum',   dest='diskunitnum',   action='store',      help='')
+    parser.add_option('--disk',           dest='disk',          action='append',     help='',                                               type="string",  nargs=2, metavar="<ARG1> <ARG2>")
+#    parser.add_option('--disk-key',       dest='diskkey',       action='store',      help='',                                               type="int")
+#    parser.add_option('--disk-size',      dest='disksize',      action='store',      help='Amount of disk space in KB (default: 31457280)', type="int")
+#    parser.add_option('--disk-mode',      dest='diskmode',      action='store',      help='Disk mode (default: persistent)')
+#    parser.add_option('--disk-unitnum',   dest='diskunitnum',   action='store',      help='')
+    parser.add_option('--nic',            dest='nic',           action='append',     help='',                                               type="string",  nargs=3, metavar="<ARG1> <ARG2> <ARG3>")
     parser.add_option('--nic-key',        dest='nickey',        action='store',      help='',                                               type="int")
     parser.add_option('--nic-network',    dest='netname',       action='store',      help='Network name (default: MGMT)')
     parser.add_option('--nic-name',       dest='nicname',       action='store',      help='Network interface name (default: Network adapter 1)')
@@ -372,12 +374,12 @@ def getCommandLineOpts():
     parser.set_defaults(memorysize=2048)
     parser.set_defaults(guestos='rhel5_64Guest')
     parser.set_defaults(annotation='')
-    parser.set_defaults(scsibuskey=0)
-    parser.set_defaults(scsibusnum=0)
-    parser.set_defaults(diskkey=0)
-    parser.set_defaults(diskunitnum=0)
-    parser.set_defaults(disksize=31457280)
-    parser.set_defaults(diskmode='persistent')
+#    parser.set_defaults(scsibuskey=0)
+#    parser.set_defaults(scsibusnum=0)
+#    parser.set_defaults(diskkey=0)
+#    parser.set_defaults(diskunitnum=0)
+#    parser.set_defaults(disksize=31457280)
+#    parser.set_defaults(diskmode='persistent')
     parser.set_defaults(nickey=0)
     parser.set_defaults(netname='MGMT')
     parser.set_defaults(nicname='Network adapter 1')
@@ -501,13 +503,27 @@ def main():
 
         # Create virtual devices
         configSpecs = []
+        scsiBusKey = 1
+        scsiBusNum = 0      # Limited to 3 ScsiControllers (i think)
+        diskKey = 0
+        diskUnitNum = 0
 
-        scsiSpec = createScsiSpec(options.scsibuskey,options.scsibusnum)
+        scsiSpec = createScsiSpec(scsiBusKey,scsiBusNum)
         configSpecs.append(scsiSpec)
 
-        diskSpec = createDiskSpec(options.scsibuskey,options.diskkey,options.diskunitnum,options.disksize,options.diskmode,options.datastore)
-        configSpecs.append(diskSpec)
+        # Limited to 15 virtual disks per ScsiController
+        for disk in options.disk:
+            size, mode,  = disk
+            size = int(size)
 
+            diskSpec = createDiskSpec(scsiBusKey,diskKey,diskUnitNum,size,mode,options.datastore)
+            configSpecs.append(diskSpec)
+
+            diskKey = diskKey + 1
+            diskUnitNum = diskUnitNum + 1
+
+        #for nic in options.nic:
+        #    a,b,c = split(nic)
         nicSpec = createNicSpec(options.nickey,options.netname,options.nicname)
         configSpecs.append(nicSpec)
 
