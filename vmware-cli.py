@@ -266,21 +266,23 @@ def createDiskSpec(scsiKey,diskKey,unitNumber,diskSize,diskMode,datastore):
 
     return diskSpec
 
-def createNicSpec(nicKey,netName,nicName):
+def createNicSpec(nicKey,netName,macAddress):
     """
     Define a virtual nic spec
     """
     nicSpec = VirtualDeviceConfigSpec()
     nicSpec.setOperation(VirtualDeviceConfigSpecOperation.add)
-    nic = VirtualE1000()
     nicBacking = VirtualEthernetCardNetworkBackingInfo()
+    # Assign Portgroup
     nicBacking.setDeviceName(netName)
-    info = Description()
-    info.setLabel(nicName)
-    info.setSummary(netName)
-    nic.setDeviceInfo(info)
-    # type: "generated", "manual", assigned" by VC
-    nic.setAddressType("generated")
+    nic = VirtualE1000()
+    # Address type is one of the following "generated", "manual", "assigned" by VC
+    if macAddress:
+        nic.setAddressType("manual")
+        # MacAddress format is not validated here.
+        nic.setMacAddress(macAddress)
+    else:
+        nic.setAddressType("generated")
     nic.setBacking(nicBacking)
     nic.setKey(nicKey)
     nicSpec.setDevice(nic)
@@ -311,6 +313,22 @@ def createVmSpec(name,cpucount,memorysize,guestos,annotation,datastore,configSpe
 
     return vmSpec
 
+def cb(option, opt_str, value, parser):
+    """
+    Call back function to allow for variable arguments
+    Optparse doesn't directly support this
+    """
+    args=[]
+    for arg in parser.rargs:
+        if arg[0] != "-":
+            args.append(arg)
+        else:
+            del parser.rargs[:len(args)]
+            break
+    if getattr(parser.values, option.dest):
+        args.extend(getattr(parser.values, option.dest))
+    setattr(parser.values, option.dest, args)
+
 def getCommandLineOpts():
     """
     Parses command line options
@@ -319,12 +337,20 @@ def getCommandLineOpts():
     """
     parser = OptionParser(version="%prog 1.0", description='VMware Command Line Interface', prog='vmware-cli.py')
 
+    # Virtual Machine Config Defaults
+    parser.set_defaults(skipSSL=True)
+    parser.set_defaults(cpucount=2)
+    parser.set_defaults(memorysize=2048)
+    parser.set_defaults(guestos='rhel5_64Guest')
+    parser.set_defaults(annotation='')
+    parser.set_defaults(datastore='Storage1')
+
+    # Hypervisor Config Options
+
     # Required Options
     parser.add_option('-s', '--server',   dest='server',        action='store',      help='VMware hypervisor')
     parser.add_option('-u', '--username', dest='username',      action='store',      help='VMware hypervisor username')
     parser.add_option('-p', '--password', dest='password',      action='store',      help='VMware hypervisor password')
-
-    parser.set_defaults(skipSSL=True)
 
     # Managed Objects
     parser.add_option('-D',               dest='datacenter',    action='store_true', help='Datacenter managed object')
@@ -359,34 +385,10 @@ def getCommandLineOpts():
     parser.add_option('--scsi-key',       dest='scsikey',       action='store',      help='',                                               type="int")
     parser.add_option('--scsi-busnum',    dest='scsibusnum',    action='store',      help='',                                               type="int")
     parser.add_option('--disk',           dest='disk',          action='append',     help='',                                               type="string",  nargs=2, metavar="<ARG1> <ARG2>")
-#    parser.add_option('--disk-key',       dest='diskkey',       action='store',      help='',                                               type="int")
-#    parser.add_option('--disk-size',      dest='disksize',      action='store',      help='Amount of disk space in KB (default: 31457280)', type="int")
-#    parser.add_option('--disk-mode',      dest='diskmode',      action='store',      help='Disk mode (default: persistent)')
-#    parser.add_option('--disk-unitnum',   dest='diskunitnum',   action='store',      help='')
-    parser.add_option('--nic',            dest='nic',           action='append',     help='',                                               type="string",  nargs=3, metavar="<ARG1> <ARG2> <ARG3>")
-    parser.add_option('--nic-key',        dest='nickey',        action='store',      help='',                                               type="int")
-    parser.add_option('--nic-network',    dest='netname',       action='store',      help='Network name (default: MGMT)')
-    parser.add_option('--nic-name',       dest='nicname',       action='store',      help='Network interface name (default: Network adapter 1)')
+    parser.add_option('--nic',            dest='nic',           action='append',     help='',                                               type="string",  nargs=2, metavar="<ARG1> <ARG2>")
+    #parser.add_option('--nic',            dest='nic',           action='callback',   help='',                                               callback=cb)
     parser.add_option('--datastore',      dest='datastore',     action='store',      help='Datastore name (default: Storage1)')
 
-    # Virtual Machine Config Defaults
-    parser.set_defaults(cpucount=2)
-    parser.set_defaults(memorysize=2048)
-    parser.set_defaults(guestos='rhel5_64Guest')
-    parser.set_defaults(annotation='')
-#    parser.set_defaults(scsibuskey=0)
-#    parser.set_defaults(scsibusnum=0)
-#    parser.set_defaults(diskkey=0)
-#    parser.set_defaults(diskunitnum=0)
-#    parser.set_defaults(disksize=31457280)
-#    parser.set_defaults(diskmode='persistent')
-    parser.set_defaults(nickey=0)
-    parser.set_defaults(netname='MGMT')
-    parser.set_defaults(nicname='Network adapter 1')
-    parser.set_defaults(datastore='Storage1')
-
-    # Hypervisor Config Options
-    
     options, args = parser.parse_args()
     
     return parser, options, args
@@ -503,29 +505,30 @@ def main():
 
         # Create virtual devices
         configSpecs = []
-        scsiBusKey = 1
+        scsiBusKey = 0
         scsiBusNum = 0      # Limited to 3 ScsiControllers (i think)
         diskKey = 0
         diskUnitNum = 0
+        nicKey = 0
+       
+        if options.disk:
+            scsiSpec = createScsiSpec(scsiBusKey,scsiBusNum)
+            configSpecs.append(scsiSpec)
 
-        scsiSpec = createScsiSpec(scsiBusKey,scsiBusNum)
-        configSpecs.append(scsiSpec)
+            # Limited to 15 virtual disks per ScsiController
+            for disk in options.disk:
+                size, mode = disk
+                diskSpec = createDiskSpec(scsiBusKey,diskKey,diskUnitNum,int(size),mode,options.datastore)
+                configSpecs.append(diskSpec)
+                diskKey = diskKey + 1
+                diskUnitNum = diskUnitNum + 1
 
-        # Limited to 15 virtual disks per ScsiController
-        for disk in options.disk:
-            size, mode,  = disk
-            size = int(size)
-
-            diskSpec = createDiskSpec(scsiBusKey,diskKey,diskUnitNum,size,mode,options.datastore)
-            configSpecs.append(diskSpec)
-
-            diskKey = diskKey + 1
-            diskUnitNum = diskUnitNum + 1
-
-        #for nic in options.nic:
-        #    a,b,c = split(nic)
-        nicSpec = createNicSpec(options.nickey,options.netname,options.nicname)
-        configSpecs.append(nicSpec)
+        if options.nic:
+            for nic in options.nic:
+                netName, macAddress = nic   # MacAddress validation doesn't happen through the api
+                nicSpec = createNicSpec(nicKey,netName,macAddress)
+                configSpecs.append(nicSpec)
+                nicKey = nicKey + 1
 
         vmSpec = createVmSpec(options.name,options.cpucount,options.memorysize,options.guestos,options.annotation,options.datastore,configSpecs)
 
