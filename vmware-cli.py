@@ -252,8 +252,8 @@ def createDiskSpec(scsiKey,diskKey,unitNumber,diskSize,diskMode,datastore):
     diskSpec.setOperation(VirtualDeviceConfigSpecOperation.add)
     diskSpec.setFileOperation(VirtualDeviceConfigSpecFileOperation.create)
     vd = VirtualDisk()
-    vd.setCapacityInKB(diskSize)
     vd.setKey(diskKey)
+    vd.setCapacityInKB(diskSize)
     vd.setUnitNumber(unitNumber)
     vd.setControllerKey(scsiKey)
     diskfileBacking = VirtualDiskFlatVer2BackingInfo()
@@ -276,6 +276,8 @@ def createNicSpec(nicKey,netName,macAddress):
     # Assign Portgroup
     nicBacking.setDeviceName(netName)
     nic = VirtualE1000()
+    nic.setKey(nicKey)
+    nic.setBacking(nicBacking)
     # Address type is one of the following "generated", "manual", "assigned" by VC
     if macAddress:
         nic.setAddressType("manual")
@@ -283,8 +285,6 @@ def createNicSpec(nicKey,netName,macAddress):
         nic.setMacAddress(macAddress)
     else:
         nic.setAddressType("generated")
-    nic.setBacking(nicBacking)
-    nic.setKey(nicKey)
     nicSpec.setDevice(nic)
 
     return nicSpec
@@ -312,22 +312,6 @@ def createVmSpec(name,cpucount,memorysize,guestos,annotation,datastore,configSpe
     vmSpec.setFiles(vmfi)
 
     return vmSpec
-
-def cb(option, opt_str, value, parser):
-    """
-    Call back function to allow for variable arguments
-    Optparse doesn't directly support this
-    """
-    args=[]
-    for arg in parser.rargs:
-        if arg[0] != "-":
-            args.append(arg)
-        else:
-            del parser.rargs[:len(args)]
-            break
-    if getattr(parser.values, option.dest):
-        args.extend(getattr(parser.values, option.dest))
-    setattr(parser.values, option.dest, args)
 
 def getCommandLineOpts():
     """
@@ -378,15 +362,12 @@ def getCommandLineOpts():
     parser.add_option('--reset',          dest='reset',         action='store_true', help='Set Power Reset')
 
     # Virtual Machine Config Options
-    parser.add_option('--cpu-count',      dest='cpucount',      action='store',      help="Number of virtual CPU's (default: 2)",           type="int")
-    parser.add_option('--memory-size',    dest='memorysize',    action='store',      help='Amount of RAM in MB (default: 2048)',            type="int")
+    parser.add_option('--cpu-count',      dest='cpucount',      action='store',      help="Number of virtual CPU's (default: 2)", type="int")
+    parser.add_option('--memory-size',    dest='memorysize',    action='store',      help='Amount of RAM in MB (default: 2048)',  type="int")
     parser.add_option('--guest-os',       dest='guestos',       action='store',      help='Guest OS short name rhel5_64Guest, freebsd64Guest, solaris10_64Guest (default: rhel5_64Guest)')
     parser.add_option('--notes',          dest='annotation',    action='store',      help='Virtual Machine annotations (default: blank)')
-    parser.add_option('--scsi-key',       dest='scsikey',       action='store',      help='',                                               type="int")
-    parser.add_option('--scsi-busnum',    dest='scsibusnum',    action='store',      help='',                                               type="int")
-    parser.add_option('--disk',           dest='disk',          action='append',     help='',                                               type="string",  nargs=2, metavar="<ARG1> <ARG2>")
-    parser.add_option('--nic',            dest='nic',           action='append',     help='',                                               type="string",  nargs=2, metavar="<ARG1> <ARG2>")
-    #parser.add_option('--nic',            dest='nic',           action='callback',   help='',                                               callback=cb)
+    parser.add_option('--disk',           dest='disk',          action='append',     help='Virtual disk size in Kb.',                                  nargs=1, metavar="<size>")
+    parser.add_option('--nic',            dest='nic',           action='append',     help='MAC address (manually assigned or the string "generated")', nargs=2, metavar="<port group> <mac address>")
     parser.add_option('--datastore',      dest='datastore',     action='store',      help='Datastore name (default: Storage1)')
 
     options, args = parser.parse_args()
@@ -509,6 +490,7 @@ def main():
         scsiBusNum = 0      # Limited to 3 ScsiControllers (i think)
         diskKey = 0
         diskUnitNum = 0
+        diskMode = "persistent" # Changes are immediately and permanently written to the virtual disk.
         nicKey = 0
        
         if options.disk:
@@ -517,15 +499,20 @@ def main():
 
             # Limited to 15 virtual disks per ScsiController
             for disk in options.disk:
-                size, mode = disk
-                diskSpec = createDiskSpec(scsiBusKey,diskKey,diskUnitNum,int(size),mode,options.datastore)
+                size = int(disk)
+                diskSpec = createDiskSpec(scsiBusKey,diskKey,diskUnitNum,size,diskMode,options.datastore)
                 configSpecs.append(diskSpec)
                 diskKey = diskKey + 1
                 diskUnitNum = diskUnitNum + 1
+                # Skip the unit number assigned to the scsi controller (7)
+                if diskUnitNum == 7:
+                    diskUnitNum = 8
 
         if options.nic:
             for nic in options.nic:
-                netName, macAddress = nic   # MacAddress validation doesn't happen through the api
+                netName, macAddress = nic   # Note: MacAddress validation doesn't happen through the api
+                if macAddress.lower() == "generated":
+                    macAddress = None
                 nicSpec = createNicSpec(nicKey,netName,macAddress)
                 configSpecs.append(nicSpec)
                 nicKey = nicKey + 1
