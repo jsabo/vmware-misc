@@ -1,6 +1,7 @@
 #!/usr/bin/env jython
 
-import getpass
+import getpass, sys, socket
+from xmlrpclib import ServerProxy
 from java.net import URL
 from optparse import OptionParser, OptionGroup, SUPPRESS_HELP
 from com.vmware.vim25 import VirtualMachineCapability
@@ -27,6 +28,8 @@ from com.vmware.vim25.mo import HostSystem
 from com.vmware.vim25.mo import HostAutoStartManager
 from com.vmware.vim25.mo import Datacenter
 from com.vmware.vim25.mo import ResourcePool
+from com.vmware.vim25 import InvalidDatastore
+from com.vmware.vim25 import InvalidArgument
 
 def getServiceInstance(svr,user,passwd,skipSSL):
     """ 
@@ -361,6 +364,9 @@ def getCommandLineOpts():
     parser.add_option('--off',            dest='off',           action='store_true', help='Set Power Off')
     parser.add_option('--reset',          dest='reset',         action='store_true', help='Set Power Reset')
 
+    # Cobbler Options
+    parser.add_option('--master',         dest='cblr_master',   action='store',      help='Cobbler master')
+
     # Virtual Machine Config Options
     parser.add_option('--cpu-count',      dest='cpucount',      action='store',      help="Number of virtual CPU's (default: 2)", type="int")
     parser.add_option('--memory-size',    dest='memorysize',    action='store',      help='Amount of RAM in MB (default: 2048)',  type="int")
@@ -492,40 +498,110 @@ def main():
         diskUnitNum = 0
         diskMode = "persistent" # Changes are immediately and permanently written to the virtual disk.
         nicKey = 0
-       
-        if options.disk:
-            scsiSpec = createScsiSpec(scsiBusKey,scsiBusNum)
-            configSpecs.append(scsiSpec)
+        SUPPORTED_HYPERVISORS = ['vmware']
 
-            # Limited to 15 virtual disks per ScsiController
-            for disk in options.disk:
-                size = int(disk)
-                diskSpec = createDiskSpec(scsiBusKey,diskKey,diskUnitNum,size,diskMode,options.datastore)
-                configSpecs.append(diskSpec)
-                diskKey = diskKey + 1
-                diskUnitNum = diskUnitNum + 1
-                # Skip the unit number assigned to the scsi controller (7)
-                if diskUnitNum == 7:
-                    diskUnitNum = 8
+        # Pull the Virtual hardware info from Cobbler
+        if options.cblr_master:
 
-        if options.nic:
-            for nic in options.nic:
-                netName, macAddress = nic   # Note: MacAddress validation doesn't happen through the api
-                if macAddress.lower() == "generated":
-                    macAddress = None
-                nicSpec = createNicSpec(nicKey,netName,macAddress)
-                configSpecs.append(nicSpec)
-                nicKey = nicKey + 1
+            # Standard XML-RPC proxy
+            conn = ServerProxy("http://%s/cobbler_api" % options.cblr_master)
+            try:
+                # Get the system from Cobbler
+                server = conn.get_system_for_koan(options.name)
+            except (socket.gaierror, ProtocolError), reason:
+                print "Unable to connect to %s (%s) " % (options.cblr_master, reason)
+                sys.exit(1)
 
-        vmSpec = createVmSpec(options.name,options.cpucount,options.memorysize,options.guestos,options.annotation,options.datastore,configSpecs)
+            if not server:
+                print "Unable to get system information for %s (exiting) " % (options.name)
+                sys.exit(1)
 
-        # Call the createVM_Task method on the vm folder
-        task = vmFolder.createVM_Task(vmSpec, resourcePool, None)
-        if task.waitForMe() == "success":
-            print "%s is being created" % options.name
-        else:
-            print "%s was not created" % options.name
+            virt_type = server.get("virt_type")
+            if virt_type not in SUPPORTED_HYPERVISORS:
+                print "Unsupported virt type %s (exiting)" % virt_type
+                sys.exit(1)
 
+            virt_bridge = server.get("virt_bridge")
+            virt_cpus = server.get("virt_cpus")
+            virt_ram = server.get("virt_ram")
+            virt_type = server.get("virt_type")
+
+            virt_path = server.get("virt_path",None)
+            virt_file_size = str(server.get("virt_file_size",None))
+
+            if virt_file_size and virt_path:
+                scsiSpec = createScsiSpec(scsiBusKey,scsiBusNum)
+                configSpecs.append(scsiSpec)
+
+                for disk in virt_file_size.split(','):
+                    # Convert gigabytes to kilabytes
+                    size = (int(disk) * 1024 * 1024)
+                    diskSpec = createDiskSpec(scsiBusKey,diskKey,diskUnitNum,size,diskMode,virt_path)
+                    configSpecs.append(diskSpec)
+                    diskKey = diskKey + 1
+                    diskUnitNum = diskUnitNum + 1
+                    # Skip the unit number assigned to the scsi controller (7)
+                    if diskUnitNum == 7:
+                        diskUnitNum = 8
+
+            interfaces = server.get("interfaces")
+            if interfaces:
+                for k in sorted(interfaces.iterkeys()):
+                    if k.find(":") == -1 and k.find(".") == -1:
+                        netName = interfaces[k]["virt_bridge"]
+                        macAddress = interfaces[k]["mac_address"]
+                        nicSpec = createNicSpec(nicKey,netName,macAddress)
+                        configSpecs.append(nicSpec)
+                        nicKey = nicKey + 1
+
+            vmSpec = createVmSpec(options.name,virt_cpus,virt_ram,options.guestos,options.annotation,virt_path,configSpecs)
+
+        # Use Command line options for Virtual Hardware options
+        else: 
+
+            if options.disk:
+                scsiSpec = createScsiSpec(scsiBusKey,scsiBusNum)
+                configSpecs.append(scsiSpec)
+
+                # Limited to 15 virtual disks per ScsiController
+                for disk in options.disk:
+                    size = int(disk)
+                    diskSpec = createDiskSpec(scsiBusKey,diskKey,diskUnitNum,size,diskMode,options.datastore)
+                    configSpecs.append(diskSpec)
+                    diskKey = diskKey + 1
+                    diskUnitNum = diskUnitNum + 1
+                    # Skip the unit number assigned to the scsi controller (7)
+                    if diskUnitNum == 7:
+                        diskUnitNum = 8
+
+            if options.nic:
+                for nic in options.nic:
+                    netName, macAddress = nic   # Note: MacAddress validation doesn't happen through the api
+                    if macAddress.lower() == "generated":
+                        macAddress = None
+                    nicSpec = createNicSpec(nicKey,netName,macAddress)
+                    configSpecs.append(nicSpec)
+                    nicKey = nicKey + 1
+
+            vmSpec = createVmSpec(options.name,options.cpucount,options.memorysize,options.guestos,options.annotation,options.datastore,configSpecs)
+
+        try:
+            # Call the createVM_Task method on the vm folder
+            task = vmFolder.createVM_Task(vmSpec, resourcePool, None)
+        except InvalidDatastore, reason:
+            print "Unable to create to vm %s (%s) " % (options.name, reason)
+            sys.exit(1)
+
+        try:
+            if task.waitForMe() == "success":
+                print "%s is being created" % options.name
+            else:
+                print "%s was not created" % options.name
+        except InvalidArgument, reason:
+            print "Unable to create to vm %s (%s) " % (options.name, reason)
+            sys.exit(1)
+
+            
     si.getServerConnection().logout()
 
 if __name__ == "__main__":
