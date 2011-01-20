@@ -521,10 +521,11 @@ def main():
                 print "Unsupported virt type %s (exiting)" % virt_type
                 sys.exit(1)
 
-            virt_bridge = server.get("virt_bridge")
-            virt_cpus = server.get("virt_cpus")
-            virt_ram = server.get("virt_ram")
-            virt_type = server.get("virt_type")
+            virt_bridge = server.get("virt_bridge",None)
+            virt_cpus = server.get("virt_cpus",None)
+            virt_ram = server.get("virt_ram",None)
+            virt_type = server.get("virt_type",None)
+            comment = server.get("comment",None)
 
             virt_path = server.get("virt_path",None)
             virt_file_size = str(server.get("virt_file_size",None))
@@ -554,7 +555,7 @@ def main():
                         configSpecs.append(nicSpec)
                         nicKey = nicKey + 1
 
-            vmSpec = createVmSpec(options.name,virt_cpus,virt_ram,options.guestos,options.annotation,virt_path,configSpecs)
+            vmSpec = createVmSpec(options.name,virt_cpus,virt_ram,options.guestos,comment,virt_path,configSpecs)
 
         # Use Command line options for Virtual Hardware options
         else: 
