@@ -535,7 +535,7 @@ def main():
                 configSpecs.append(scsiSpec)
 
                 for disk in virt_file_size.split(','):
-                    # Convert gigabytes to kilabytes
+                    # Convert gigabytes to kilobytes
                     size = (int(disk) * 1024 * 1024)
                     diskSpec = createDiskSpec(scsiBusKey,diskKey,diskUnitNum,size,diskMode,virt_path)
                     configSpecs.append(diskSpec)
