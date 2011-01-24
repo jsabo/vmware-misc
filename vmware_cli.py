@@ -1,6 +1,6 @@
 #!/usr/bin/env jython
 
-import getpass, sys, socket
+import getpass, sys, socket, os
 from xmlrpclib import ServerProxy
 from java.net import URL
 from optparse import OptionParser, OptionGroup, SUPPRESS_HELP
@@ -388,15 +388,14 @@ def main():
     if options.server is None:
         parser.error("You must provide a server")
 
-    username = options.username                 or \
-               System.getenv('VMWARE_USERNAME') or \
-               System.getProperty('user.name')
-    
+    username = options.username or os.getenv('VMWARE_USERNAME')
+   
     if username is None:
         parser.error("You must provide a username")
 
-    password = options.password or \
-               System.getenv('VMWARE_PASSWORD')
+    password = options.password or os.getenv('VMWARE_PASSWORD')
+
+    print password
 
     if password is None:
         password = getpass.getpass('Enter password for %s: ' % username)
