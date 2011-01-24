@@ -1,7 +1,8 @@
 #!/usr/bin/env jython
 
 import getpass
-from java.net import URL
+from java.net  import URL
+from java.lang import System
 from optparse import OptionParser, OptionGroup, SUPPRESS_HELP
 from com.vmware.vim25 import VirtualMachineCapability
 from com.vmware.vim25 import VirtualMachineConfigInfo
@@ -381,12 +382,19 @@ def main():
     # Check command line options
     if options.server is None:
         parser.error("You must provide a server")
-    if options.username is None:
+
+    username = options.username                 or \
+               System.getenv('VMWARE_USERNAME') or \
+               System.getProperty('user.name')
+    
+    if username is None:
         parser.error("You must provide a username")
-    if options.password is None:
-        password = getpass.getpass('Enter password for %s: ' % options.username)
-    else:
-        password = options.password
+
+    password = options.password or \
+               System.getenv('VMWARE_PASSWORD')
+
+    if password is None:
+        password = getpass.getpass('Enter password for %s: ' % username)
 
     if (options.name and options.uuid):
         parser.error("A single filter must be specified at a time")
@@ -401,7 +409,7 @@ def main():
         parser.error("A single action must be specified at a time")
     
     # Get esx service instance
-    si = getServiceInstance(options.server,options.username,password,options.skipSSL)
+    si = getServiceInstance(options.server,username,password,options.skipSSL)
 
     # Query Datacenter
     if options.query and options.datacenter:
