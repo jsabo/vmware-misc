@@ -395,8 +395,6 @@ def main():
 
     password = options.password or os.getenv('VMWARE_PASSWORD')
 
-    print password
-
     if password is None:
         password = getpass.getpass('Enter password for %s: ' % username)
 
