@@ -450,33 +450,30 @@ def main():
     # Modify Virtual Machine power state by name
     if options.name and options.power and options.modify:
         vm = getVirtualMachineByName(si,options.name)
-        if vm:
-            if options.reset:
-                resetVm(vm)
-            elif options.off:
-                powerOffVm(vm)
-            elif options.on:
-                powerOnVm(vm)
+        if vm and options.reset:
+            resetVm(vm)
+        elif vm and options.off:
+            powerOffVm(vm)
+        elif vm and options.on:
+            powerOnVm(vm)
     # Modify Virtual Machine power state by uuid
     elif options.uuid and options.power and options.modify:
         vm = getVirtualMachineByUUID(si,options.uuid)
-        if vm:
-            if options.reset:
-                resetVm(vm)
-            elif options.off:
-                powerOffVm(vm)
-            elif options.on:
-                powerOnVm(vm)
+        if vm and options.reset:
+            resetVm(vm)
+        elif vm and options.off:
+            powerOffVm(vm)
+        elif vm and options.on:
+            powerOnVm(vm)
     # Modify power state for all Virual Machines on a host
     elif options.all and options.power and options.modify:
         vms = getVirtualMachines(si)
-        if vms:
-            if options.reset:
-                resetAllVms(vms)
-            elif options.off:
-                powerOffAllVms(vms)
-            elif options.on:
-                powerOnAllVms(vms)
+        if vms and options.reset:
+            resetAllVms(vms)
+        elif vms and options.off:
+            powerOffAllVms(vms)
+        elif vms and options.on:
+            powerOnAllVms(vms)
 
     # Delete VMs
     if options.name and options.delete and options.vm:
@@ -502,6 +499,7 @@ def main():
         diskUnitNum = 0
         diskMode = "persistent" # Changes are immediately and permanently written to the virtual disk.
         nicKey = 0
+        RESERVED_UNITNUM = 7
         SUPPORTED_HYPERVISORS = ['vmware']
 
         # Pull the Virtual hardware info from Cobbler
@@ -546,10 +544,10 @@ def main():
                     diskKey = diskKey + 1
                     diskUnitNum = diskUnitNum + 1
                     # Skip the unit number assigned to the scsi controller (7)
-                    if diskUnitNum == 7:
-                        diskUnitNum = 8
+                    if diskUnitNum == RESERVED_UNITNUM:
+                        diskUnitNum = diskUnitNum + 1
 
-            interfaces = server.get("interfaces")
+            interfaces = server.get("interfaces", None)
             if interfaces:
                 for k in sorted(interfaces.iterkeys()):
                     if k.find(":") == -1 and k.find(".") == -1:
@@ -576,8 +574,8 @@ def main():
                     diskKey = diskKey + 1
                     diskUnitNum = diskUnitNum + 1
                     # Skip the unit number assigned to the scsi controller (7)
-                    if diskUnitNum == 7:
-                        diskUnitNum = 8
+                    if diskUnitNum == RESERVED_UNITNUM:
+                        diskUnitNum = diskUnitNum + 1
 
             if options.nic:
                 for nic in options.nic:
