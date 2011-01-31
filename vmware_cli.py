@@ -233,6 +233,37 @@ def resetAllVms(vms):
     for vm in vms:
         resetVm(vm)
 
+def getHostAutoStartOption(host):
+    """
+    Return autostart configuration for a host
+    """
+    pass
+
+def setHostAutoStartOption(host,isEnabled=True,startDelay=30,stopDelay=30):
+    """
+    Configure the automatic start/stop of virtual machines on a host
+    """
+    asd = AutoStartDefaults()
+    asd.setEnabled(isEnabled)
+    asd.setStartDelay(startDelay)
+    asd.setStopDelay(stopDelay)
+    asSpec = HostAutoStartManagerConfig()
+    asSpec.setDefaults(asd)
+    hasm = host.getHostAutoStartManager()
+    hasm.reconfigureAutostart(asSpec)
+
+def getVmAutoStartOption:
+    """
+    Return autostart configuration for a host
+    """
+    pass
+
+def setVmAutoStartOption:
+    """
+    Configure the automatic start/stop of a virtual machine
+    """
+    pass
+
 def createScsiSpec(scsiKey,busNumber):
     """
     Define a virtual scsi ctrl spec
