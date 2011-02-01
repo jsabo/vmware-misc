@@ -18,6 +18,7 @@ from com.vmware.vim25 import VirtualDiskFlatVer2BackingInfo
 from com.vmware.vim25 import VirtualE1000
 from com.vmware.vim25 import VirtualEthernetCardNetworkBackingInfo
 from com.vmware.vim25 import AutoStartDefaults
+from com.vmware.vim25 import HostAutoStartManagerConfig
 from com.vmware.vim25 import Description
 from com.vmware.vim25 import OptionValue
 from com.vmware.vim25.mo import Folder
@@ -129,18 +130,26 @@ def listHostSystems(hss):
     if isinstance(hss, HostSystem):
         enabled,startDelay,stopDelay,stopAction,waitForHeartbeat = getHostAutoStartOption(hss)
         if enabled:
-            status = "ON"
+            autostatus = "ON"
         else:
-            status = "OFF"
-        print FORMAT % (hss.getName(),status,startDelay,stopDelay,stopAction,waitForHeartbeat)
+            autostatus = "OFF"
+        if waitForHeartbeat:
+            hbstatus = "ON"
+        else:
+            hbstatus = "OFF"
+        print FORMAT % (hss.getName(),autostatus,startDelay,stopDelay,stopAction,hbstatus)
     else:
         for hs in hss:
             enabled,startDelay,stopDelay,stopAction,waitForHeartbeat = getHostAutoStartOption(hs)
             if enabled:
-                status = "ON"
+                autostatus = "ON"
             else:
-                status = "OFF"
-            print FORMAT % (hs.getName(),status,startDelay,stopDelay,stopAction,waitForHeartbeat)
+                autostatus = "OFF"
+        if waitForHeartbeat:
+            hbstatus = "ON"
+        else:
+            hbstatus = "OFF"
+        print FORMAT % (hs.getName(),autostatus,startDelay,stopDelay,stopAction,hbstatus)
 
 def listDatacenters(dcs):
     """
@@ -261,18 +270,15 @@ def setHostAutoStartOption(host,isEnabled,startDelay,stopDelay,stopAction,waitFo
     """
     asd = AutoStartDefaults()
     asd.setEnabled(isEnabled)
-
+    asd.setWaitForHeartbeat(waitForHeartbeat)
     if isEnabled and startDelay:
         # Defaults to 120 Seconds
-        asd.setStartDelay(startDelay)
-    if isEnabled and stoptDelay:
+        asd.setStartDelay(int(startDelay))
+    if isEnabled and stopDelay:
         # Defaults to 120 Seconds
-        asd.setStopDelay(stopDelay)
+        asd.setStopDelay(int(stopDelay))
     if isEnabled and stopAction:
         asd.setStopAction(stopAction)
-    if isEnabled and waitForHeartbeat:
-        asd.setWaitForHeartbeat(waitForHeartbeat)
-
     asSpec = HostAutoStartManagerConfig()
     asSpec.setDefaults(asd)
     hasm = host.getHostAutoStartManager()
@@ -383,6 +389,8 @@ def getCommandLineOpts():
 
     # Virtual Machine Config Defaults
     parser.set_defaults(skipSSL=True)
+    parser.set_defaults(autostart=True)
+    parser.set_defaults(heartbeat=False)
     parser.set_defaults(cpucount=2)
     parser.set_defaults(memorysize=2048)
     parser.set_defaults(guestos='rhel5_64Guest')
@@ -392,46 +400,55 @@ def getCommandLineOpts():
     # Hypervisor Config Options
 
     # Required Options
-    parser.add_option('-s', '--server',   dest='server',        action='store',      help='VMware hypervisor')
-    parser.add_option('-u', '--username', dest='username',      action='store',      help='VMware hypervisor username')
-    parser.add_option('-p', '--password', dest='password',      action='store',      help='VMware hypervisor password')
+    parser.add_option('-s', '--server',   dest='server',        action='store',       help='VMware hypervisor')
+    parser.add_option('-u', '--username', dest='username',      action='store',       help='VMware hypervisor username')
+    parser.add_option('-p', '--password', dest='password',      action='store',       help='VMware hypervisor password')
 
     # Managed Objects
-    parser.add_option('-D',               dest='datacenter',    action='store_true', help='Datacenter managed object')
-    parser.add_option('-H',               dest='host',          action='store_true', help='Host managed object')
-    parser.add_option('-V',               dest='vm',            action='store_true', help='Virtual machine managed object')
-    parser.add_option('-R',               dest='resource',      action='store_true', help='Resource Pool managed object')
-    parser.add_option('-P',               dest='power',         action='store_true', help='Power state')
-    parser.add_option('-T',               dest='time',          action='store_true', help='Time state')
-    parser.add_option('-L',               dest='license',       action='store_true', help='License state')
+    parser.add_option('-D',               dest='datacenter',    action='store_true',  help='Datacenter managed object')
+    parser.add_option('-H',               dest='host',          action='store_true',  help='Host managed object')
+    parser.add_option('-V',               dest='vm',            action='store_true',  help='Virtual machine managed object')
+    parser.add_option('-R',               dest='resource',      action='store_true',  help='Resource Pool managed object')
+    parser.add_option('-P',               dest='power',         action='store_true',  help='Power state')
+    parser.add_option('-T',               dest='time',          action='store_true',  help='Time state')
+    parser.add_option('-L',               dest='license',       action='store_true',  help='License state')
 
     # Actions
-    parser.add_option('-q', '--query',    dest='query',         action='store_true', help='Query')
-    parser.add_option('-d', '--delete',   dest='delete',        action='store_true', help='Delete')
-    parser.add_option('-c', '--create',   dest='create',        action='store_true', help='Create')
-    parser.add_option('-m', '--modify',   dest='modify',        action='store_true', help='Modify')
+    parser.add_option('-q', '--query',    dest='query',         action='store_true',  help='Query')
+    parser.add_option('-d', '--delete',   dest='delete',        action='store_true',  help='Delete')
+    parser.add_option('-c', '--create',   dest='create',        action='store_true',  help='Create')
+    parser.add_option('-m', '--modify',   dest='modify',        action='store_true',  help='Modify')
 
     # Filters
-    parser.add_option('--all',            dest='all',           action='store_true', help='Select all')
-    parser.add_option('--name',           dest='name',          action='store',      help='Select by name')
-    parser.add_option('--uuid',           dest='uuid',          action='store',      help='Select by uuid')
+    parser.add_option('--all',            dest='all',           action='store_true',  help='Select all')
+    parser.add_option('--name',           dest='name',          action='store',       help='Select by name')
+    parser.add_option('--uuid',           dest='uuid',          action='store',       help='Select by uuid')
     
     # Power Settings
-    parser.add_option('--on',             dest='on',            action='store_true', help='Set Power On')
-    parser.add_option('--off',            dest='off',           action='store_true', help='Set Power Off')
-    parser.add_option('--reset',          dest='reset',         action='store_true', help='Set Power Reset')
+    parser.add_option('--on',             dest='on',            action='store_true',  help='Set Power On')
+    parser.add_option('--off',            dest='off',           action='store_true',  help='Set Power Off')
+    parser.add_option('--reset',          dest='reset',         action='store_true',  help='Set Power Reset')
 
     # Cobbler Options
-    parser.add_option('--master',         dest='cblr_master',   action='store',      help='Cobbler master')
+    parser.add_option('--master',         dest='cblr_master',   action='store',       help='Cobbler master')
+
+    # Hypervisor Config Options
+    parser.add_option('--auto-start',     dest='autostart',     action='store_true',  help='Enable Auto Start')
+    parser.add_option('--no-auto-start',  dest='autostart',     action='store_false', help='Disable Auto Start')
+    parser.add_option('--start-delay',    dest='start_delay',   action='store',       help='System default auto start in seconds')
+    parser.add_option('--stop-delay',     dest='stop_delay',    action='store',       help='System default auto stop in seconds')
+    parser.add_option('--stop-action',    dest='stop_action',   action='store',       help='System default power-off action')
+    parser.add_option('--heartbeat',      dest='heartbeat',     action='store_true',  help='Enable swaitForHeartbeat setting')
+    parser.add_option('--no-heartbeat',   dest='heartbeat',     action='store_false', help='Disable waitForHeartbeat setting')
 
     # Virtual Machine Config Options
-    parser.add_option('--cpu-count',      dest='cpucount',      action='store',      help="Number of virtual CPU's (default: 2)", type="int")
-    parser.add_option('--memory-size',    dest='memorysize',    action='store',      help='Amount of RAM in MB (default: 2048)',  type="int")
-    parser.add_option('--guest-os',       dest='guestos',       action='store',      help='Guest OS short name rhel5_64Guest, freebsd64Guest, solaris10_64Guest (default: rhel5_64Guest)')
-    parser.add_option('--notes',          dest='annotation',    action='store',      help='Virtual Machine annotations (default: blank)')
-    parser.add_option('--disk',           dest='disk',          action='append',     help='Virtual disk size in Kb.',                                  nargs=1, metavar="<size>")
-    parser.add_option('--nic',            dest='nic',           action='append',     help='MAC address (manually assigned or the string "generated")', nargs=2, metavar="<port group> <mac address>")
-    parser.add_option('--datastore',      dest='datastore',     action='store',      help='Datastore name (default: Storage1)')
+    parser.add_option('--cpu-count',      dest='cpucount',      action='store',       help="Number of virtual CPU's (default: 2)", type="int")
+    parser.add_option('--memory-size',    dest='memorysize',    action='store',       help='Amount of RAM in MB (default: 2048)',  type="int")
+    parser.add_option('--guest-os',       dest='guestos',       action='store',       help='Guest OS short name rhel5_64Guest, freebsd64Guest, solaris10_64Guest (default: rhel5_64Guest)')
+    parser.add_option('--notes',          dest='annotation',    action='store',       help='Virtual Machine annotations (default: blank)')
+    parser.add_option('--disk',           dest='disk',          action='append',      help='Virtual disk size in Kb.',                                  nargs=1, metavar="<size>")
+    parser.add_option('--nic',            dest='nic',           action='append',      help='MAC address (manually assigned or the string "generated")', nargs=2, metavar="<port group> <mac address>")
+    parser.add_option('--datastore',      dest='datastore',     action='store',       help='Datastore name (default: Storage1)')
 
     options, args = parser.parse_args()
     
@@ -482,6 +499,17 @@ def main():
         if hss:
             listHostSystems(hss)
 
+    # Modify Host Systems
+    if options.modify and options.host:
+        hss = getHostSystems(si)
+        if (len(hss) > 1):
+            for hs in hss:
+                setHostAutoStartOption(hs,options.autostart,options.start_delay,options.stop_delay,
+                                       options.stop_action,options.heartbeat)
+        else:
+            setHostAutoStartOption(hss[0],options.autostart,options.start_delay,options.stop_delay,
+                                   options.stop_action,options.heartbeat)
+                                   
     # Query Resource Pools
     if options.query and options.resource:
         rps = getResourcePools(si)
