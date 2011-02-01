@@ -122,15 +122,25 @@ def listHostSystems(hss):
     """
     Print each esx(i) instance's configuration
     """   
-    FORMAT = '%-22s'
-    print FORMAT % ('ESX Name')
-    print FORMAT % ('=' * 22)
+    FORMAT = '%-22s %-9s %-10s %-9s %-10s %-18s'
+    print FORMAT % ('ESX Name','AutoStart','StartDelay','StopDelay','StopAction','Wait For Heartbeat')
+    print FORMAT % ('=' * 22, '=' * 9, '=' * 10, '=' * 9, '=' * 10, '=' * 18)
 
     if isinstance(hss, HostSystem):
-        print FORMAT % (hss.getName())
+        enabled,startDelay,stopDelay,stopAction,waitForHeartbeat = getHostAutoStartOption(hss)
+        if enabled:
+            status = "ON"
+        else:
+            status = "OFF"
+        print FORMAT % (hss.getName(),status,startDelay,stopDelay,stopAction,waitForHeartbeat)
     else:
         for hs in hss:
-            print FORMAT % (hs.getName())
+            enabled,startDelay,stopDelay,stopAction,waitForHeartbeat = getHostAutoStartOption(hs)
+            if enabled:
+                status = "ON"
+            else:
+                status = "OFF"
+            print FORMAT % (hs.getName(),status,startDelay,stopDelay,stopAction,waitForHeartbeat)
 
 def listDatacenters(dcs):
     """
