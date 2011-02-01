@@ -17,6 +17,7 @@ from com.vmware.vim25 import VirtualDisk
 from com.vmware.vim25 import VirtualDiskFlatVer2BackingInfo
 from com.vmware.vim25 import VirtualE1000
 from com.vmware.vim25 import VirtualEthernetCardNetworkBackingInfo
+from com.vmware.vim25 import AutoStartDefaults
 from com.vmware.vim25 import Description
 from com.vmware.vim25 import OptionValue
 from com.vmware.vim25.mo import Folder
@@ -237,29 +238,44 @@ def getHostAutoStartOption(host):
     """
     Return autostart configuration for a host
     """
-    pass
+    enabled = host.getHostAutoStartManager().config.defaults.getEnabled()
+    startDelay = host.getHostAutoStartManager().config.defaults.getStartDelay()
+    stopDelay = host.getHostAutoStartManager().config.defaults.getStopDelay()
+    stopAction = host.getHostAutoStartManager().config.defaults.getStopAction()
+    waitForHeartbeat = host.getHostAutoStartManager().config.defaults.getWaitForHeartbeat()
+    return ([enabled,startDelay,stopDelay,stopAction,waitForHeartbeat])
 
-def setHostAutoStartOption(host,isEnabled=True,startDelay=30,stopDelay=30):
+def setHostAutoStartOption(host,isEnabled,startDelay,stopDelay,stopAction,waitForHeartbeat):
     """
     Configure the automatic start/stop of virtual machines on a host
     """
     asd = AutoStartDefaults()
     asd.setEnabled(isEnabled)
-    asd.setStartDelay(startDelay)
-    asd.setStopDelay(stopDelay)
+
+    if isEnabled and startDelay:
+        # Defaults to 120 Seconds
+        asd.setStartDelay(startDelay)
+    if isEnabled and stoptDelay:
+        # Defaults to 120 Seconds
+        asd.setStopDelay(stopDelay)
+    if isEnabled and stopAction:
+        asd.setStopAction(stopAction)
+    if isEnabled and waitForHeartbeat:
+        asd.setWaitForHeartbeat(waitForHeartbeat)
+
     asSpec = HostAutoStartManagerConfig()
     asSpec.setDefaults(asd)
     hasm = host.getHostAutoStartManager()
     hasm.reconfigureAutostart(asSpec)
 
-def getVmAutoStartOption:
+def getVmAutoStartOption(vm):
     """
-    Return autostart configuration for a host
+    Return autostart configuration for a virutal machine
     """
     pass
 
-def setVmAutoStartOption:
-    """
+def setVmAutoStartOption(vm):
+    """ 
     Configure the automatic start/stop of a virtual machine
     """
     pass
