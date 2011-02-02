@@ -21,6 +21,8 @@ from com.vmware.vim25 import AutoStartDefaults
 from com.vmware.vim25 import HostAutoStartManagerConfig
 from com.vmware.vim25 import Description
 from com.vmware.vim25 import OptionValue
+from com.vmware.vim25 import InvalidDatastore
+from com.vmware.vim25 import InvalidArgument
 from com.vmware.vim25.mo import Folder
 from com.vmware.vim25.mo import InventoryNavigator
 from com.vmware.vim25.mo import ManagedEntity
@@ -30,8 +32,8 @@ from com.vmware.vim25.mo import HostSystem
 from com.vmware.vim25.mo import HostAutoStartManager
 from com.vmware.vim25.mo import Datacenter
 from com.vmware.vim25.mo import ResourcePool
-from com.vmware.vim25 import InvalidDatastore
-from com.vmware.vim25 import InvalidArgument
+from com.vmware.vim25.mo import ResourcePool
+from com.vmware.vim25.mo.util import MorUtil
 
 def getServiceInstance(svr,user,passwd,skipSSL):
     """ 
@@ -128,7 +130,7 @@ def listHostSystems(hss):
     print FORMAT % ('=' * 22, '=' * 9, '=' * 10, '=' * 9, '=' * 10, '=' * 18)
 
     if isinstance(hss, HostSystem):
-        enabled,startDelay,stopDelay,stopAction,waitForHeartbeat = getHostAutoStartOption(hss)
+        enabled,startDelay,stopDelay,stopAction,waitForHeartbeat = getHostAutoStartOptionDefaults(hss)
         if enabled:
             autostatus = "ON"
         else:
@@ -140,15 +142,15 @@ def listHostSystems(hss):
         print FORMAT % (hss.getName(),autostatus,startDelay,stopDelay,stopAction,hbstatus)
     else:
         for hs in hss:
-            enabled,startDelay,stopDelay,stopAction,waitForHeartbeat = getHostAutoStartOption(hs)
+            enabled,startDelay,stopDelay,stopAction,waitForHeartbeat = getHostAutoStartOptionDefaults(hs)
             if enabled:
                 autostatus = "ON"
             else:
                 autostatus = "OFF"
-        if waitForHeartbeat:
-            hbstatus = "ON"
-        else:
-            hbstatus = "OFF"
+            if waitForHeartbeat:
+                hbstatus = "ON"
+            else:
+                hbstatus = "OFF"
         print FORMAT % (hs.getName(),autostatus,startDelay,stopDelay,stopAction,hbstatus)
 
 def listDatacenters(dcs):
@@ -253,7 +255,7 @@ def resetAllVms(vms):
     for vm in vms:
         resetVm(vm)
 
-def getHostAutoStartOption(host):
+def getHostAutoStartOptionDefaults(host):
     """
     Return autostart configuration for a host
     """
@@ -264,7 +266,7 @@ def getHostAutoStartOption(host):
     waitForHeartbeat = host.getHostAutoStartManager().config.defaults.getWaitForHeartbeat()
     return ([enabled,startDelay,stopDelay,stopAction,waitForHeartbeat])
 
-def setHostAutoStartOption(host,isEnabled,startDelay,stopDelay,stopAction,waitForHeartbeat):
+def setHostAutoStartOptionDefaults(host,isEnabled,startDelay,stopDelay,stopAction,waitForHeartbeat):
     """
     Configure the automatic start/stop of virtual machines on a host
     """
@@ -284,13 +286,15 @@ def setHostAutoStartOption(host,isEnabled,startDelay,stopDelay,stopAction,waitFo
     hasm = host.getHostAutoStartManager()
     hasm.reconfigureAutostart(asSpec)
 
-def getVmAutoStartOption(vm):
+def getHostVmAutoStartOption(si,host):
     """
     Return autostart configuration for a virutal machine
     """
-    pass
+    for mor in host.getHostAutoStartManager().config.powerInfo:
+        vm = MorUtil.createExactManagedObject(si.getServerConnection(),mor.getKey())
+        print vm.name, mor.startAction, mor.startDelay, mor.startOrder, mor.stopAction, mor.stopDelay
 
-def setVmAutoStartOption(vm):
+def setHostVmAutoStartOption(vm):
     """ 
     Configure the automatic start/stop of a virtual machine
     """
@@ -504,11 +508,11 @@ def main():
         hss = getHostSystems(si)
         if (len(hss) > 1):
             for hs in hss:
-                setHostAutoStartOption(hs,options.autostart,options.start_delay,options.stop_delay,
-                                       options.stop_action,options.heartbeat)
+                setHostAutoStartOptionDefaults(hs,options.autostart,options.start_delay,options.stop_delay,
+                                               options.stop_action,options.heartbeat)
         else:
-            setHostAutoStartOption(hss[0],options.autostart,options.start_delay,options.stop_delay,
-                                   options.stop_action,options.heartbeat)
+            setHostAutoStartOptionDefaults(hss[0],options.autostart,options.start_delay,options.stop_delay,
+                                           options.stop_action,options.heartbeat)
                                    
     # Query Resource Pools
     if options.query and options.resource:
