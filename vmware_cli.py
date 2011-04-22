@@ -12,6 +12,9 @@ from com.vmware.vim25 import VirtualDeviceConfigSpec
 from com.vmware.vim25 import VirtualDeviceConfigSpecOperation
 from com.vmware.vim25 import VirtualDeviceConfigSpecFileOperation
 from com.vmware.vim25 import VirtualLsiLogicSASController
+from com.vmware.vim25 import VirtualLsiLogicController
+from com.vmware.vim25 import ParaVirtualSCSIController
+from com.vmware.vim25 import VirtualBusLogicController
 from com.vmware.vim25 import VirtualSCSISharing
 from com.vmware.vim25 import VirtualDisk
 from com.vmware.vim25 import VirtualDiskFlatVer2BackingInfo
@@ -121,7 +124,7 @@ def listVirtualMachines(vms):
                             vm.getConfig().hardware.numCPU,vm.getConfig().hardware.memoryMB,
                             vm.getConfig().annotation,state)
 
-def listHostSystems(hss):
+def listHostSystems(si,hss):
     """
     Print each esx(i) instance's configuration
     """   
@@ -140,6 +143,8 @@ def listHostSystems(hss):
         else:
             hbstatus = "OFF"
         print FORMAT % (hss.getName(),autostatus,startDelay,stopDelay,stopAction,hbstatus)
+        print
+        listHostVmAutoStartOption(si,hss)
     else:
         for hs in hss:
             enabled,startDelay,stopDelay,stopAction,waitForHeartbeat = getHostAutoStartOptionDefaults(hs)
@@ -151,7 +156,9 @@ def listHostSystems(hss):
                 hbstatus = "ON"
             else:
                 hbstatus = "OFF"
-        print FORMAT % (hs.getName(),autostatus,startDelay,stopDelay,stopAction,hbstatus)
+            print FORMAT % (hs.getName(),autostatus,startDelay,stopDelay,stopAction,hbstatus)
+            print
+            listHostVmAutoStartOption(si,hs)
 
 def listDatacenters(dcs):
     """
@@ -286,13 +293,18 @@ def setHostAutoStartOptionDefaults(host,isEnabled,startDelay,stopDelay,stopActio
     hasm = host.getHostAutoStartManager()
     hasm.reconfigureAutostart(asSpec)
 
-def getHostVmAutoStartOption(si,host):
+def listHostVmAutoStartOption(si,host):
     """
     Return autostart configuration for a virutal machine
     """
-    for mor in host.getHostAutoStartManager().config.powerInfo:
-        vm = MorUtil.createExactManagedObject(si.getServerConnection(),mor.getKey())
-        print vm.name, mor.startAction, mor.startDelay, mor.startOrder, mor.stopAction, mor.stopDelay
+    if host.getHostAutoStartManager().config.powerInfo:
+        FORMAT = '%-22s %-11s %-11s %-11s %-13s %-11s %-11s'
+        print FORMAT % ('VM Name','StartAction','StartDelay','StartOrder','StopAction','StopDelay','WaitForHeartBeat')
+        print FORMAT % ('=' * 22, '=' * 11, '=' * 11, '=' * 11, '=' * 13, '=' * 11,'=' * 11)
+        config = []
+        for mor in host.getHostAutoStartManager().config.powerInfo:
+            vm = MorUtil.createExactManagedObject(si.getServerConnection(),mor.getKey())
+            print FORMAT % (vm.name,mor.startAction,mor.startDelay,mor.startOrder,mor.stopAction,mor.stopDelay,mor.waitForHeartbeat)
 
 def setHostVmAutoStartOption(vm):
     """ 
@@ -300,13 +312,20 @@ def setHostVmAutoStartOption(vm):
     """
     pass
 
-def createScsiSpec(scsiKey,busNumber):
+def createScsiSpec(scsiKey,busNumber,ctrlType):
     """
     Define a virtual scsi ctrl spec
     """
     scsiSpec = VirtualDeviceConfigSpec()
     scsiSpec.setOperation(VirtualDeviceConfigSpecOperation.add)
-    scsiCtrl = VirtualLsiLogicSASController()
+    if ctrlType == "sas":
+        scsiCtrl = VirtualLsiLogicSASController()
+    elif ctrlType == "parallel":
+        scsiCtrl = VirtualLsiLogicController()
+    elif ctrlType == "buslogic":
+        scsiCtrl = VirtualBusLogicController()
+    elif ctrlType == "paravirt":
+        scsiCtrl = ParaVirtualSCSIController()
     scsiCtrl.setKey(scsiKey)
     scsiCtrl.setBusNumber(busNumber)
     scsiCtrl.setSharedBus(VirtualSCSISharing.noSharing)
@@ -395,6 +414,7 @@ def getCommandLineOpts():
     parser.set_defaults(skipSSL=True)
     parser.set_defaults(autostart=True)
     parser.set_defaults(heartbeat=False)
+    parser.set_defaults(ctrlType='sas')
     parser.set_defaults(cpucount=2)
     parser.set_defaults(memorysize=2048)
     parser.set_defaults(guestos='rhel5_64Guest')
@@ -422,6 +442,7 @@ def getCommandLineOpts():
     parser.add_option('-d', '--delete',   dest='delete',        action='store_true',  help='Delete')
     parser.add_option('-c', '--create',   dest='create',        action='store_true',  help='Create')
     parser.add_option('-m', '--modify',   dest='modify',        action='store_true',  help='Modify')
+    parser.add_option('--prune',          dest='prune',         action='store_true',  help='Prune')
 
     # Filters
     parser.add_option('--all',            dest='all',           action='store_true',  help='Select all')
@@ -449,9 +470,11 @@ def getCommandLineOpts():
     parser.add_option('--cpu-count',      dest='cpucount',      action='store',       help="Number of virtual CPU's (default: 2)", type="int")
     parser.add_option('--memory-size',    dest='memorysize',    action='store',       help='Amount of RAM in MB (default: 2048)',  type="int")
     parser.add_option('--guest-os',       dest='guestos',       action='store',       help='Guest OS short name rhel5_64Guest, freebsd64Guest, solaris10_64Guest (default: rhel5_64Guest)')
+    parser.add_option('--ctrl-type',      dest='ctrlType',      action='store',       help='Chose one of the following scsi controller types (Default: sas, paravirt, buslogic, parallel)', 
+                      choices=('sas','paravirt','buslogic','parallel'))
     parser.add_option('--notes',          dest='annotation',    action='store',       help='Virtual Machine annotations (default: blank)')
-    parser.add_option('--disk',           dest='disk',          action='append',      help='Virtual disk size in Kb.',                                  nargs=1, metavar="<size>")
-    parser.add_option('--nic',            dest='nic',           action='append',      help='MAC address (manually assigned or the string "generated")', nargs=2, metavar="<port group> <mac address>")
+    parser.add_option('--disk',           dest='disk',          action='append',      help='Virtual disk size in Kb.',                                  metavar="<size>", nargs=1)
+    parser.add_option('--nic',            dest='nic',           action='append',      help='MAC address (manually assigned or the string "generated")', metavar="<port group>,<mac address>")
     parser.add_option('--datastore',      dest='datastore',     action='store',       help='Datastore name (default: Storage1)')
 
     options, args = parser.parse_args()
@@ -501,7 +524,7 @@ def main():
     if options.query and options.host:
         hss = getHostSystems(si)
         if hss:
-            listHostSystems(hss)
+            listHostSystems(si,hss)
 
     # Modify Host Systems
     if options.modify and options.host:
@@ -591,6 +614,14 @@ def main():
         RESERVED_UNITNUM = 7
         SUPPORTED_HYPERVISORS = ['vmware']
 
+        # If prune is selected delete the vm prior to creating it
+        if options.create and options.vm and options.prune:
+            try:
+                vm = getVirtualMachineByName(si,options.name)
+                deleteVm(vm)
+            except IndexError:
+                pass
+
         # Pull the Virtual hardware info from Cobbler
         if options.cblr_master:
 
@@ -622,7 +653,7 @@ def main():
             virt_file_size = str(server.get("virt_file_size",None))
 
             if virt_file_size and virt_path:
-                scsiSpec = createScsiSpec(scsiBusKey,scsiBusNum)
+                scsiSpec = createScsiSpec(scsiBusKey,scsiBusNum,options.ctrlType)
                 configSpecs.append(scsiSpec)
 
                 for disk in virt_file_size.split(','):
@@ -652,7 +683,7 @@ def main():
         else: 
 
             if options.disk:
-                scsiSpec = createScsiSpec(scsiBusKey,scsiBusNum)
+                scsiSpec = createScsiSpec(scsiBusKey,scsiBusNum,options.ctrlType)
                 configSpecs.append(scsiSpec)
 
                 # Limited to 15 virtual disks per ScsiController
@@ -668,8 +699,10 @@ def main():
 
             if options.nic:
                 for nic in options.nic:
-                    netName, macAddress = nic   # Note: MacAddress validation doesn't happen through the api
-                    if macAddress.lower() == "generated":
+                    try:
+                        netName, macAddress = nic.split(',',1)
+                    except ValueError:
+                        netName = nic
                         macAddress = None
                     nicSpec = createNicSpec(nicKey,netName,macAddress)
                     configSpecs.append(nicSpec)
@@ -689,7 +722,7 @@ def main():
                 print "%s is being created" % options.name
             else:
                 print "%s was not created" % options.name
-        except InvalidArgument, reason:
+        except (InvalidArgument, InvalidDatastore), reason:
             print "Unable to create to vm %s (%s) " % (options.name, reason)
             sys.exit(1)
 
