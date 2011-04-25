@@ -100,6 +100,15 @@ def getVirtualMachineByUUID(si,vmuuid):
             return vm
     return None
 
+def getPortgroups(hss):
+    """
+    Return each portgroup configuration
+    """
+    pgList = []
+    for pg in hss.hostNetworkSystem.getNetworkConfig().getPortgroup():
+        pgList.append([pg.getSpec().vswitchName,pg.getSpec().name,pg.getSpec().vlanId])
+    return pgList
+
 def listVirtualMachines(vms):
     """
     Print each virtual machine's configuration
@@ -147,6 +156,7 @@ def listHostSystems(si,hss):
         print FORMAT % (hss.getName(),autostatus,startDelay,stopDelay,stopAction,hbstatus)
         print
         listHostVmAutoStartOption(si,hss)
+        print getPortgroups(hss)
     else:
         for hs in hss:
             enabled,startDelay,stopDelay,stopAction,waitForHeartbeat = getHostAutoStartOptionDefaults(hs)
@@ -161,6 +171,7 @@ def listHostSystems(si,hss):
             print FORMAT % (hs.getName(),autostatus,startDelay,stopDelay,stopAction,hbstatus)
             print
             listHostVmAutoStartOption(si,hs)
+            print getPortgroups(hs)
 
 def listDatacenters(dcs):
     """
