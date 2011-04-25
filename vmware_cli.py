@@ -37,7 +37,6 @@ from com.vmware.vim25.mo import HostSystem
 from com.vmware.vim25.mo import HostAutoStartManager
 from com.vmware.vim25.mo import Datacenter
 from com.vmware.vim25.mo import ResourcePool
-from com.vmware.vim25.mo import ResourcePool
 from com.vmware.vim25.mo.util import MorUtil
 
 def getServiceInstance(svr,user,passwd,skipSSL):
@@ -109,6 +108,17 @@ def getPortgroups(hss):
         pgList.append([pg.getSpec().vswitchName,pg.getSpec().name,pg.getSpec().vlanId])
     return pgList
 
+def listPortgroups(hss):
+    """
+    Print each portgroup and associated virtual switch and vlan info
+    """
+    FORMAT = '%-15s %-20s %-10s'
+    print FORMAT % ('Virtual Switch', 'Portgroup', 'VLan ID')
+    print FORMAT % ('=' * 15, '=' * 9, '=' * 7)
+    pgs = getPortgroups(hss)
+    for pg in pgs:
+        print FORMAT % (pg[0], pg[1], pg[2])
+
 def listVirtualMachines(vms):
     """
     Print each virtual machine's configuration
@@ -156,7 +166,7 @@ def listHostSystems(si,hss):
         print FORMAT % (hss.getName(),autostatus,startDelay,stopDelay,stopAction,hbstatus)
         print
         listHostVmAutoStartOption(si,hss)
-        print getPortgroups(hss)
+        listPortgroups(hss)
     else:
         for hs in hss:
             enabled,startDelay,stopDelay,stopAction,waitForHeartbeat = getHostAutoStartOptionDefaults(hs)
@@ -171,7 +181,7 @@ def listHostSystems(si,hss):
             print FORMAT % (hs.getName(),autostatus,startDelay,stopDelay,stopAction,hbstatus)
             print
             listHostVmAutoStartOption(si,hs)
-            print getPortgroups(hs)
+            listPortgroups(hs)
 
 def listDatacenters(dcs):
     """
