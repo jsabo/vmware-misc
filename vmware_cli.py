@@ -19,6 +19,8 @@ from com.vmware.vim25 import VirtualSCSISharing
 from com.vmware.vim25 import VirtualDisk
 from com.vmware.vim25 import VirtualDiskFlatVer2BackingInfo
 from com.vmware.vim25 import VirtualE1000
+from com.vmware.vim25 import VirtualVmxnet2
+from com.vmware.vim25 import VirtualVmxnet3
 from com.vmware.vim25 import VirtualEthernetCardNetworkBackingInfo
 from com.vmware.vim25 import AutoStartDefaults
 from com.vmware.vim25 import HostAutoStartManagerConfig
@@ -312,19 +314,19 @@ def setHostVmAutoStartOption(vm):
     """
     pass
 
-def createScsiSpec(scsiKey,busNumber,ctrlType):
+def createScsiSpec(scsiKey,busNumber,scsiType):
     """
     Define a virtual scsi ctrl spec
     """
     scsiSpec = VirtualDeviceConfigSpec()
     scsiSpec.setOperation(VirtualDeviceConfigSpecOperation.add)
-    if ctrlType == "sas":
+    if scsiType == "sas":
         scsiCtrl = VirtualLsiLogicSASController()
-    elif ctrlType == "parallel":
+    elif scsiType == "parallel":
         scsiCtrl = VirtualLsiLogicController()
-    elif ctrlType == "buslogic":
+    elif scsiType == "buslogic":
         scsiCtrl = VirtualBusLogicController()
-    elif ctrlType == "paravirt":
+    elif scsiType == "paravirt":
         scsiCtrl = ParaVirtualSCSIController()
     scsiCtrl.setKey(scsiKey)
     scsiCtrl.setBusNumber(busNumber)
@@ -355,7 +357,7 @@ def createDiskSpec(scsiKey,diskKey,unitNumber,diskSize,diskMode,datastore):
 
     return diskSpec
 
-def createNicSpec(nicKey,netName,macAddress):
+def createNicSpec(nicKey,netName,macAddress,nicType):
     """
     Define a virtual nic spec
     """
@@ -364,7 +366,12 @@ def createNicSpec(nicKey,netName,macAddress):
     nicBacking = VirtualEthernetCardNetworkBackingInfo()
     # Assign Portgroup
     nicBacking.setDeviceName(netName)
-    nic = VirtualE1000()
+    if nicType == "e1000":
+        nic = VirtualE1000()
+    elif nicType == "vmxnet2":
+        nic = VirtualVmxnet2()
+    elif nicType == "vmxnet3":
+        nic = VirtualVmxnet3()
     nic.setKey(nicKey)
     nic.setBacking(nicBacking)
     # Address type is one of the following "generated", "manual", "assigned" by VC
@@ -414,12 +421,13 @@ def getCommandLineOpts():
     parser.set_defaults(skipSSL=True)
     parser.set_defaults(autostart=True)
     parser.set_defaults(heartbeat=False)
-    parser.set_defaults(ctrlType='sas')
+    parser.set_defaults(scsiType='sas')
+    parser.set_defaults(nicType='e1000')
     parser.set_defaults(cpucount=2)
     parser.set_defaults(memorysize=2048)
     parser.set_defaults(guestos='rhel5_64Guest')
     parser.set_defaults(annotation='')
-    parser.set_defaults(datastore='Storage1')
+    parser.set_defaults(datastore='datastore1')
 
     # Hypervisor Config Options
 
@@ -470,8 +478,8 @@ def getCommandLineOpts():
     parser.add_option('--cpu-count',      dest='cpucount',      action='store',       help="Number of virtual CPU's (default: 2)", type="int")
     parser.add_option('--memory-size',    dest='memorysize',    action='store',       help='Amount of RAM in MB (default: 2048)',  type="int")
     parser.add_option('--guest-os',       dest='guestos',       action='store',       help='Guest OS short name rhel5_64Guest, freebsd64Guest, solaris10_64Guest (default: rhel5_64Guest)')
-    parser.add_option('--ctrl-type',      dest='ctrlType',      action='store',       help='Chose one of the following scsi controller types (Default: sas, paravirt, buslogic, parallel)', 
-                      choices=('sas','paravirt','buslogic','parallel'))
+    parser.add_option('--scsi-type',      dest='scsiType',      action='store',       help='Chose one of the following scsi controller types (Default: sas, paravirt, buslogic, parallel)', choices=('sas','paravirt','buslogic','parallel'))
+    parser.add_option('--nic-type',       dest='nicType',       action='store',       help='Chose one of the following nic types (Default: e1000, vmxnet2, vmxnet3)', choices=('e1000','vmxnet2','vmxnet3'))
     parser.add_option('--notes',          dest='annotation',    action='store',       help='Virtual Machine annotations (default: blank)')
     parser.add_option('--disk',           dest='disk',          action='append',      help='Virtual disk size in Kb.',                                   metavar="<size>", nargs=1)
     parser.add_option('--nic',            dest='nic',           action='append',      help='MAC address (manually assigned or blank for esx generated)', metavar="<port group>,<mac address>")
@@ -653,7 +661,7 @@ def main():
             virt_file_size = str(server.get("virt_file_size",None))
 
             if virt_file_size and virt_path:
-                scsiSpec = createScsiSpec(scsiBusKey,scsiBusNum,options.ctrlType)
+                scsiSpec = createScsiSpec(scsiBusKey,scsiBusNum,options.scsiType)
                 configSpecs.append(scsiSpec)
 
                 for disk in virt_file_size.split(','):
@@ -673,7 +681,7 @@ def main():
                     if k.find(":") == -1 and k.find(".") == -1:
                         netName = interfaces[k]["virt_bridge"]
                         macAddress = interfaces[k]["mac_address"]
-                        nicSpec = createNicSpec(nicKey,netName,macAddress)
+                        nicSpec = createNicSpec(nicKey,netName,macAddress,options.nictype)
                         configSpecs.append(nicSpec)
                         nicKey = nicKey + 1
 
@@ -683,7 +691,7 @@ def main():
         else: 
 
             if options.disk:
-                scsiSpec = createScsiSpec(scsiBusKey,scsiBusNum,options.ctrlType)
+                scsiSpec = createScsiSpec(scsiBusKey,scsiBusNum,options.scsiType)
                 configSpecs.append(scsiSpec)
 
                 # Limited to 15 virtual disks per ScsiController
@@ -704,7 +712,7 @@ def main():
                     except ValueError:
                         netName = nic
                         macAddress = None
-                    nicSpec = createNicSpec(nicKey,netName,macAddress)
+                    nicSpec = createNicSpec(nicKey,netName,macAddress,options.nicType)
                     configSpecs.append(nicSpec)
                     nicKey = nicKey + 1
 
