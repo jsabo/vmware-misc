@@ -166,6 +166,7 @@ def listHostSystems(si,hss):
         print FORMAT % (hss.getName(),autostatus,startDelay,stopDelay,stopAction,hbstatus)
         print
         listHostVmAutoStartOption(si,hss)
+        print
         listPortgroups(hss)
     else:
         for hs in hss:
@@ -181,6 +182,7 @@ def listHostSystems(si,hss):
             print FORMAT % (hs.getName(),autostatus,startDelay,stopDelay,stopAction,hbstatus)
             print
             listHostVmAutoStartOption(si,hs)
+            print
             listPortgroups(hs)
 
 def listDatacenters(dcs):
@@ -429,6 +431,9 @@ def createVmSpec(name,cpucount,memorysize,guestos,annotation,datastore,configSpe
     vmSpec.setFiles(vmfi)
 
     return vmSpec
+
+def createVM():
+    pass
 
 def getCommandLineOpts():
     """
