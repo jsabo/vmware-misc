@@ -509,7 +509,7 @@ def getCommandLineOpts():
     parser.add_option('--notes',          dest='annotation',    action='store',       help='Virtual Machine annotations (default: blank)')
     parser.add_option('--disk',           dest='disk',          action='append',      help='Virtual disk size in Kb.',                                   metavar="<size>", nargs=1)
     parser.add_option('--nic',            dest='nic',           action='append',      help='MAC address (manually assigned or blank for esx generated)', metavar="<port group>,<mac address>")
-    parser.add_option('--datastore',      dest='datastore',     action='store',       help='Datastore name (default: Storage1)')
+    parser.add_option('--datastore',      dest='datastore',     action='store',       help='Datastore name (default: datastore1)')
 
     options, args = parser.parse_args()
     

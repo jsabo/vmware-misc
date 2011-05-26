@@ -1,0 +1,6 @@
+#!/bin/bash
+export VMWARE_USERNAME='root'
+export VMWARE_PASSWORD='supsup'
+. /etc/profile.d/vijava.sh
+/usr/local/bin/vmware_cli.py -s $1 -Vc --name $2 --master $3 --prune
+/usr/local/bin/vmware_cli.py -s $1 -mP --on --name $2
