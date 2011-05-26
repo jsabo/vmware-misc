@@ -1,8 +1,10 @@
 #!/usr/bin/env jython
 
-import getpass, sys, socket, os
+import getpass, sys, socket, os, math
 from xmlrpclib import ServerProxy
 from java.net import URL
+from java.util import Calendar
+from java.text import DateFormat
 from optparse import OptionParser, OptionGroup, SUPPRESS_HELP
 from com.vmware.vim25 import VirtualMachineCapability
 from com.vmware.vim25 import VirtualMachineConfigInfo
@@ -28,6 +30,8 @@ from com.vmware.vim25 import Description
 from com.vmware.vim25 import OptionValue
 from com.vmware.vim25 import InvalidDatastore
 from com.vmware.vim25 import InvalidArgument
+from com.vmware.vim25 import LicenseManagerLicenseInfo
+from com.vmware.vim25.mo import LicenseManager
 from com.vmware.vim25.mo import Folder
 from com.vmware.vim25.mo import InventoryNavigator
 from com.vmware.vim25.mo import ManagedEntity
@@ -46,6 +50,123 @@ def getServiceInstance(svr,user,passwd,skipSSL):
     url = URL("https://%s/sdk" % svr)
     si = ServiceInstance(url,user,passwd,skipSSL)
     return si
+
+def getExpirationDate(license_props):
+    """
+    Iterates through a property list and returns the expirationDate
+    """
+    if license_props:
+        df = DateFormat.getInstance()
+        for p in license_props:
+            if p.getKey() == "expirationDate":
+                val = p.getValue()
+                if val.getClass().getName() == "java.util.GregorianCalendar":
+                    return df.format(val.getTime())
+    return None
+
+def getLicenseManager(si):
+    """
+    Get an LM object from the service instance   
+    """
+    lm = si.getLicenseManager()
+    if not lm: return None
+    return lm
+
+def dumpPropertyList(pList):
+    """
+    Iterates through a property list and prints the key/value pairs
+    Primarily for debugging
+    """
+    FORMAT = "%16s %s"
+    for p in pList:
+        k = p.getKey()
+        if p.getValue().__class__ is unicode or \
+                p.getValue().__class__ is long:
+            v = p.getValue()
+
+        elif p.getValue().getClass().getName() == "com.vmware.vim25.KeyValue":
+            v = p.getValue().getValue()
+        elif p.getValue().getClass().getName() == "java.util.GregorianCalendar":
+            df = DateFormat.getInstance()
+            v = df.format(p.getValue().getTime())
+        else:
+            v = "Val: UNABLE TO PRINT; " + p.getValue().getClass().getName()
+
+        print FORMAT % (k.capitalize()+":", v)
+        
+
+def printLicenseDetails(licenseProp):
+    """
+    Given a service instance print as
+    many properties as possible
+    """
+
+    # For now we just do a dump of all the properties
+    dumpPropertyList(licenseProp)
+
+def decodeLicenseString(si, licStr):
+    FORMAT = "%16s %s"
+    lm = getLicenseManager(si)
+    if type(licStr) is str and lm:
+        ## Decode the license string passed to us
+        licInfo = lm.decodeLicense(licStr)
+        prop = licInfo.getProperties()
+        print FORMAT % ("Cost Unit: ", licInfo.getCostUnit())
+        print FORMAT % ("Name: ", licInfo.getName())
+        dumpPropertyList(prop)
+ 
+def addLicense(si, licStr):
+    lm = getLicenseManager(si)
+    if type(licStr) is str and lm:
+        ## Decode the license string passed to us
+        lm.addLicense(licStr, None)
+
+
+def rmLicense(si, licStr):
+    lm = getLicenseManager(si)
+    if type(licStr) is str and lm:
+        ## Decode the license string passed to us
+        lm.removeLicense(licStr)
+
+def getLicenses(si):
+    """
+    Return a list of licenses from the current service instance
+    """
+    lm = getLicenseManager(si)
+    licList = lm.getLicenses()
+    return licList
+
+def listLicenses(si):
+    props = None
+    FORMAT = "%16s %s"
+    for l in getLicenses(si):
+        print FORMAT % ("Type: ", l.getEditionKey().capitalize())
+        if "eval" == l.getEditionKey():
+            lm = getLicenseManager(si)
+            props = lm.getEvaluation().getProperties()
+            expires = getExpirationDate(props)
+        else:
+            props = l.getProperties()
+            expires =  getExpirationDate(props)
+        print FORMAT % ("Expires: ", expires)
+        printLicenseDetails(props)
+
+def printHostHardwareSummary(si):
+    host = InventoryNavigator(si.getRootFolder()).searchManagedEntities("HostSystem")
+    df = DateFormat.getInstance()
+    for h in host:
+        hinfo = h.getHardware()
+        print "Hypervisor Name: " + h.getName()
+        print hinfo.getSystemInfo().getVendor(),
+        print hinfo.getSystemInfo().getModel()
+        print "Bios: ", hinfo.getBiosInfo().getBiosVersion(),
+        print df.format(hinfo.getBiosInfo().getReleaseDate().getTime())
+        print "Overall Status: ", 
+        print h.getOverallStatus().toString().capitalize()
+        print "CPU Info: ", hinfo.getCpuPkg()[0].getDescription()
+        print "\tCPU's: ", hinfo.getCpuInfo().getNumCpuPackages()
+        print "\tCores: ", hinfo.getCpuInfo().getNumCpuCores()
+        print "Memory Info: %.2f GB" % (hinfo.getMemorySize() * pow(10.0, -9))
 
 def getDatacenters(si):
     """
@@ -166,7 +287,6 @@ def listHostSystems(si,hss):
         print FORMAT % (hss.getName(),autostatus,startDelay,stopDelay,stopAction,hbstatus)
         print
         listHostVmAutoStartOption(si,hss)
-        print
         listPortgroups(hss)
     else:
         for hs in hss:
@@ -182,7 +302,6 @@ def listHostSystems(si,hss):
             print FORMAT % (hs.getName(),autostatus,startDelay,stopDelay,stopAction,hbstatus)
             print
             listHostVmAutoStartOption(si,hs)
-            print
             listPortgroups(hs)
 
 def listDatacenters(dcs):
@@ -432,8 +551,14 @@ def createVmSpec(name,cpucount,memorysize,guestos,annotation,datastore,configSpe
 
     return vmSpec
 
-def createVM():
-    pass
+def ipAddressToVMwareMac(ipaddress):
+    """
+    Generate a mac address based on a given ip address.
+    This takes the last 3 octets of an ip, turns them into hex,
+    appends that to the vmware vm range 00:05:56, and returns it
+    """
+    p1,p2,p3,p4 = ipaddress.split('.')
+    return "00:50:56:%x:%x:%x" % (int(p2),int(p3),int(p4))
 
 def getCommandLineOpts():
     """
@@ -490,6 +615,7 @@ def getCommandLineOpts():
 
     # Cobbler Options
     parser.add_option('--master',         dest='cblr_master',   action='store',       help='Cobbler master')
+    parser.add_option('--genmac',         dest='genmac',        action='store_true',  help='Generate VMware MAC based on ip address')
 
     # Hypervisor Config Options
     parser.add_option('--auto-start',     dest='autostart',     action='store_true',  help='Enable Auto Start')
@@ -507,9 +633,9 @@ def getCommandLineOpts():
     parser.add_option('--scsi-type',      dest='scsiType',      action='store',       help='Chose one of the following scsi controller types (Default: sas, paravirt, buslogic, parallel)', choices=('sas','paravirt','buslogic','parallel'))
     parser.add_option('--nic-type',       dest='nicType',       action='store',       help='Chose one of the following nic types (Default: e1000, vmxnet2, vmxnet3)', choices=('e1000','vmxnet2','vmxnet3'))
     parser.add_option('--notes',          dest='annotation',    action='store',       help='Virtual Machine annotations (default: blank)')
-    parser.add_option('--disk',           dest='disk',          action='append',      help='Virtual disk size in Kb.',                                   metavar="<size>", nargs=1)
+    parser.add_option('--disk',           dest='disk',          action='append',      help='Virtual disk size in Gb.',                                   metavar="<size>", nargs=1)
     parser.add_option('--nic',            dest='nic',           action='append',      help='MAC address (manually assigned or blank for esx generated)', metavar="<port group>,<mac address>")
-    parser.add_option('--datastore',      dest='datastore',     action='store',       help='Datastore name (default: datastore1)')
+    parser.add_option('--datastore',      dest='datastore',     action='store',       help='Datastore name (default: Storage1)')
 
     options, args = parser.parse_args()
     
@@ -576,6 +702,9 @@ def main():
         rps = getResourcePools(si)
         if rps:
             listResourcePools(rps)
+
+    if options.query and options.license:
+        listLicenses(si)
 
     # Query Virtual Machine by name
     if options.query and options.name and options.vm:
@@ -705,9 +834,14 @@ def main():
             if interfaces:
                 for k in sorted(interfaces.iterkeys()):
                     if k.find(":") == -1 and k.find(".") == -1:
+
+                        # Generate VMware MAC based on IP
+                        if (options.genmac and k == "eth1"):
+                            interfaces[k]["mac_address"] = ipAddressToVMwareMac(interfaces[k]["ip_address"])
+
                         netName = interfaces[k]["virt_bridge"]
                         macAddress = interfaces[k]["mac_address"]
-                        nicSpec = createNicSpec(nicKey,netName,macAddress,options.nictype)
+                        nicSpec = createNicSpec(nicKey,netName,macAddress,options.nicType)
                         configSpecs.append(nicSpec)
                         nicKey = nicKey + 1
 
@@ -722,7 +856,7 @@ def main():
 
                 # Limited to 15 virtual disks per ScsiController
                 for disk in options.disk:
-                    size = int(disk)
+                    size = (int(disk) * 1024 * 1024)
                     diskSpec = createDiskSpec(scsiBusKey,diskKey,diskUnitNum,size,diskMode,options.datastore)
                     configSpecs.append(diskSpec)
                     diskKey = diskKey + 1
@@ -765,3 +899,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
