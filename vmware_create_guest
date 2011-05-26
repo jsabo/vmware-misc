@@ -1,0 +1,28 @@
+#set system_name = $getVar('system_name','')
+#set profile_name = $getVar('profile_name','')
+#set breed = $getVar('breed','')
+#set os_version = $getVar('os_version','')
+#set srv = $getVar('http_server','')
+#set kickstart = $getVar('kickstart','')
+#set ksmeta = $getVar('ksmeta','')
+#set run_install_triggers = $str($getVar('run_install_triggers',''))
+#set pxe_just_once = $str($getVar('pxe_just_once',''))
+#set nopxe = ""
+#set saveks = ""
+#set runpost = ""
+
+
+#if $system_name != ''
+
+## CREATE VMWARE GUESTS
+#if $vmware_create_guests in [ "1", "true", "yes", "y" ]
+    #if $breed == 'vmware' and $os_version == 'esx4'
+        #set create_guest = "\ncurl \"http://%s/cblr/svc/op/trig/mode/post/%s/%s\" -o /dev/null" % (srv, "system", system_name)
+    #else if $breed == 'vmware' and $os_version == 'esxi4'
+        #set create_guest = "\nwget \"http://%s/cblr/svc/op/trig/mode/post/%s/%s\" -O /dev/null" % (srv, "system", system_name)
+    #end if
+#end if
+
+#echo $create_guest
+
+#echo $ksmeta
